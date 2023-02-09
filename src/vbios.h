@@ -1,9 +1,5 @@
 /* 855resolution by Alain Poirier
  *
- * Currently only tested on a Dell 510m with BIOS A04
- * *VERY* likely that this won't work yet on any
- * other versions or chipsets!!!
- *
  * This code is based on the techniques used in :
  *
  *   - 855patch.  Many thanks to Christian Zietz (czietz gmx net)
@@ -14,13 +10,13 @@
  *
  * This source code is into the public domain.
  */
+
 #ifndef _VBIOS_H_
 #define _VBIOS_H_
 
 #define VBIOS_SIZE 0x10000
 
-struct vbios_mode
-{
+struct vbios_mode {
     unsigned char mode;
     unsigned char bits_per_pixel;
     unsigned short resolution;
@@ -34,6 +30,7 @@ extern void display_chipset(void);
 extern void open_bios(void);
 extern void close_bios(void);
 extern unsigned char *get_vbios_cfg(void);
+extern void unlock_bios(void);
+extern void relock_bios(void);
 
 #endif
-

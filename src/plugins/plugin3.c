@@ -32,6 +32,11 @@ struct vbios_modeline {
     unsigned short vblank;
     unsigned short vsyncstart;
     unsigned short vsyncend;
+
+    unsigned short timing_h;
+    unsigned short timing_v;
+
+    unsigned char unknown[6];
 } __attribute__((packed));
 
 struct vbios_resolution {
@@ -40,8 +45,6 @@ struct vbios_resolution {
     struct vbios_modeline modelines[];
 } __attribute__((packed));
 
-#define NB_TIMINGS 3
-
 #define TIMING_60 0
 #define TIMING_75 1
 #define TIMING_85 2
@@ -49,7 +52,7 @@ struct vbios_resolution {
 static int freqs[] = { 60, 75, 85 };
 
 static struct plugin_info *_get_plugin_info(void) {
-static struct plugin_info pi = { "1", ".", 100 };
+static struct plugin_info pi = { "3", ".", 300 };
     return &pi;
 }
 
@@ -70,7 +73,7 @@ static void _set_resolution(struct vbios_resolution *resolution, unsigned int x,
 struct vbios_modeline *modeline;
 int i;
 
-    for(i=0; i<NB_TIMINGS; i++) {
+    for(i=0; i<3; i++) {
         modeline = &resolution->modelines[i];
 
         if(modeline->x1 == resolution->modelines[0].x1) {
@@ -90,11 +93,14 @@ int i;
             modeline->vsyncstart = y+10;
             modeline->vsyncend   = y+20;
             modeline->vtotal     = y+30;
+
+            modeline->timing_h   = 0x2ff;
+            modeline->timing_v   = 0x4ff;
         }
     }
 }
 
-struct plugin plugin1 = {
+struct plugin plugin3 = {
 	_get_plugin_info,
     _detect_vbios_type,
     _get_vbios_version,

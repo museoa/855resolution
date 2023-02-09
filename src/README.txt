@@ -3,8 +3,9 @@
 
 This software changes the resolution of an available vbios mode.
 
-This software is only tested on my Dell 510m with a BIOS A04, to
-get the 1400x1050 resolution.
+I've personaly only tested this software on a Dell 510m, to get the
+1400x1050 resolution. It's reported, by others, to also works on several
+855 / 865 / 915 chipset based laptops.
 
 It patches only the RAM version of the video bios so the new resolution
 is loose each time you reboot. If you want to set the resolution each
@@ -17,7 +18,7 @@ Usage
 
 You must be root to launch it.
 
-  Usage: 855resolution [-l] [-f bios_type] [mode X Y]
+  Usage: 855resolution [-l] [-f bios_type] [-p] [mode X Y]
   Options:
       -l display the modes found into the vbios
       -f skip the automatic VBIOS detection by forcing a VBIOS type
@@ -38,7 +39,7 @@ Setting
 
         # 855resolution -l
         Chipset: 855GM
-	VBIOS type: 1
+        VBIOS type: 1
         BIOS Version: 3240
 
         Mode 30 : 640x480, 8 bits/pixel
@@ -60,7 +61,7 @@ Setting
         Mode 5a : 1600x1200, 32 bits/pixel
         Mode 5c : 1920x1440, 32 bits/pixel
 
-    2. I personnaly decided to overwrite the 1920x1440 resolution
+    2. I personnaly decided to overwrite the 1920x1440 resolution (mode 3c)
        because I don't use it :
 
        # 855resolution 3c 1400 1050
@@ -69,7 +70,7 @@ Setting
 
         # 855resolution -l
         Chipset: 855GM
-	VBIOS type: 1
+        VBIOS type: 1
         BIOS Version: 3240
 
         Mode 30 : 640x480, 8 bits/pixel

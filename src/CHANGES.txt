@@ -1,3 +1,10 @@
+Version 0.4
+
+  - Works now with 865 and 915 chipsets
+  - Code re-structuration
+  - Added command line option -p to list the installed
+    plugins
+  
 Version 0.3
 
   - New vbios type detection algorithm

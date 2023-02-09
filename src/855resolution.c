@@ -1,9 +1,5 @@
 /* 855resolution by Alain Poirier
  *
- * Currently only tested on a Dell 510m with BIOS A04
- * *VERY* likely that this won't work yet on any
- * other versions or chipsets!!!
- *
  * This code is based on the techniques used in :
  *
  *   - 855patch.  Many thanks to Christian Zietz (czietz gmx net)
@@ -19,16 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/io.h>
 
 #include "vbios.h"
 #include "plugin.h"
 
-extern struct plugin PLUGINS;
-static struct plugin *plugins[] = { REF_PLUGINS };
-#define nb_plugins ((int) (sizeof(plugins) / sizeof(struct plugin *)))
-
-static struct vbios_mode *find_modes(int *bios_type) {
-int i;
+static struct vbios_mode *find_modes(struct plugin **plugin) {
 struct vbios_mode *modes;
 unsigned char *p = bios;
 
@@ -36,13 +28,8 @@ unsigned char *p = bios;
         modes = (struct vbios_mode *) p;
 
         if(((modes[0].mode & 0xf0) == 0x30) && ((modes[1].mode & 0xf0) == 0x30) && ((modes[2].mode & 0xf0) == 0x30) && ((modes[3].mode & 0xf0) == 0x30)) {
-            if(*bios_type == -1) {
-                for(i=0; i<nb_plugins; i++) {
-                    if(plugins[i]->detect_vbios_type(modes)) {
-                        *bios_type = i;
-                        break;
-                    }
-                }
+            if(*plugin == NULL) {
+            	*plugin = detect_vbios_type(modes);
             }
 
             return modes;
@@ -66,11 +53,11 @@ static struct vbios_resolution *find_resolution(struct vbios_mode *modes, int mo
     return NULL;
 }
 
-static void list_modes(int vbios_type, struct vbios_mode *modes) {
+static void list_modes(struct plugin *plugin, struct vbios_mode *modes) {
 unsigned int x, y;
 
     while(modes->mode != 0xff) {
-        plugins[vbios_type]->get_resolution(VBIOS_POINTER(modes->resolution), &x, &y);
+        plugin->get_resolution(VBIOS_POINTER(modes->resolution), &x, &y);
 
         if((x != 0) && (y != 0)) {
             printf("Mode %02x : %dx%d, %d bits/pixel\n", modes->mode, x, y, modes->bits_per_pixel);
@@ -80,36 +67,55 @@ unsigned int x, y;
     }
 }
 
-static int parse_args(int argc, char *argv[], int *list, int *bios_type, int *mode, int *x, int *y) {
+static int parse_args(
+						int argc, char *argv[],
+						int *list, int *plugins, struct plugin **plugin,
+						int *mode, int *x, int *y
+					 ) {
+int plugin_type;
 int index = 1;
 
-    *list = *mode = *x = *y = 0;
-    *bios_type = -1;
+    *list = *plugins = *mode = *x = *y = 0;
+    *plugin = NULL;
 
-    if((argc > index) && !strcmp(argv[index], "-l")) {
-        *list = 1;
-        index++;
-
-        if(argc<=index) {
-            return 0;
-        }
+    while((argc > index) && (strlen(argv[index]) == 2) && (argv[index][0] == '-')) {
+    	index++;
+    	
+    	switch(argv[index-1][1]) {
+    		case 'l':
+    			*list = 1;
+    		break;
+    		
+    		case 'p':
+    			*plugins = 1;
+    		break;
+    		
+    		case 'f':
+    			if(argc <= index)
+    			{
+    				return -1;
+    			}
+    			
+				plugin_type = atoi(argv[index])-1;
+		        if((plugin_type<0) || (plugin_type >= get_nb_plugins())) {
+		            fprintf(stderr, "Unknown forced VBIOS type (must be <= %d)\n", get_nb_plugins());
+		        	return -1;
+		    	}
+		    	
+		    	*plugin = get_plugin(plugin_type);
+		    	index++;
+		    break;
+		    
+    		default:
+    			return -1;
+    	}
     }
 
-    if((argc > index) && !strcmp(argv[index], "-f")) {
-        index++;
-    *bios_type = atoi(argv[index])-1;
-    index++;
-        if((*bios_type)<0 || (*bios_type >= nb_plugins)) {
-            fprintf(stderr, "Unknown forced VBIOS type (must be <= %d)\n", nb_plugins);
-        return -1;
-    }
-
-    if(argc<=index) {
-        return 0;
-    }
-    }
-
-    if(argc-index != 3) {
+	if((argc-index) == 0) {
+		return 0;
+	}
+	
+    if((argc-index) != 3) {
         return -1;
     }
 
@@ -121,28 +127,36 @@ int index = 1;
 }
 
 static void usage(char *name) {
-    printf("Usage: %s [-l] [-f bios_type] [mode X Y]\n", name);
+    printf("Usage: %s [-p] [-l] [-f bios_type] [mode X Y]\n", name);
     printf("  Set the resolution to XxY for mode\n");
     printf("  Options:\n");
     printf("    -l display the modes found into the vbios\n");
     printf("    -f skip the VBIOS detection by forcing a VBIOS type\n");
+    printf("    -p display the registered plugins\n");
 }
 
 int main (int argc, char *argv[]) {
 unsigned char *vbios_cfg;
-int vbios_type;
+struct plugin *plugin = NULL;
 struct vbios_mode *modes;
 void *resolution;
-int list, mode, x, y;
+int list, plugins, mode, x, y;
 
+	initialize_plugins();
+		
     printf("855resolution version %s, by Alain Poirier\n\n", VERSION);
 
-    if(parse_args(argc, argv, &list, &vbios_type, &mode, &x, &y) == -1)
+    if(parse_args(argc, argv, &list, &plugins, &plugin, &mode, &x, &y) == -1)
     {
         usage(argv[0]);
         return 2;
     }
 
+	if(plugins)
+	{
+		display_plugins();
+	}
+	
     if(iopl(3) < 0) {
         perror("Unable to obtain the proper IO permissions");
         return 2;
@@ -152,15 +166,15 @@ int list, mode, x, y;
 
     open_bios();
 
-    modes = find_modes(&vbios_type);
-    if(vbios_type == -1)
+    modes = find_modes(&plugin);
+    if(plugin == NULL)
     {
         fprintf(stderr, "Unknow VBIOS structure\n");
         close_bios();
         return 2;
     }
 
-    printf("VBIOS type: %d\n", vbios_type+1);
+    printf("VBIOS type: %s\n", plugin->get_plugin_info()->label);
 
     vbios_cfg = get_vbios_cfg();
     if(vbios_cfg == NULL) {
@@ -169,7 +183,7 @@ int list, mode, x, y;
         return 2;
     }
 
-    printf("VBIOS Version: %.4s\n", plugins[vbios_type]->get_vbios_version(vbios_cfg));
+    printf("VBIOS Version: %.4s\n", plugin->get_vbios_version(vbios_cfg));
 
     if(modes == NULL)
     {
@@ -181,7 +195,7 @@ int list, mode, x, y;
     putchar('\n');
 
     if(list) {
-        list_modes(vbios_type, modes);
+        list_modes(plugin, modes);
     }
 
     if(mode!=0 && x!=0 && y!=0)
@@ -194,13 +208,15 @@ int list, mode, x, y;
             return 2;
         }
 
-        plugins[vbios_type]->set_resolution(resolution, x, y);
+		unlock_bios();
+    	plugin->set_resolution(resolution, x, y);
+		relock_bios();
 
-        printf("** Patch mode %02x to resolution %dx%d complete\n", mode, x, y);
+		printf("** Patch mode %02x to resolution %dx%d complete\n", mode, x, y);
 
-        if(list) {
-            list_modes(vbios_type, modes);
-        }
+		if(list) {
+			list_modes(plugin, modes);
+    	}
     }
 
     close_bios();

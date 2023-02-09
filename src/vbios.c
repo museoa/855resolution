@@ -1,9 +1,5 @@
 /* 855resolution by Alain Poirier
  *
- * Currently only tested on a Dell 510m with BIOS A04
- * *VERY* likely that this won't work yet on any
- * other versions or chipsets!!!
- *
  * This code is based on the techniques used in :
  *
  *   - 855patch.  Many thanks to Christian Zietz (czietz gmx net)
@@ -14,6 +10,7 @@
  *
  * This source code is into the public domain.
  */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,13 +22,13 @@
 
 #include "vbios.h"
 
-#define CHIPSET_ID          0x35808086
+#define VBIOS_START 0xc0000
+#define CFG_SIGNATURE "BIOS_DATA_BLOCK "
 
-#define VBIOS_START         0xc0000
-#define CFG_SIGNATURE       "BIOS_DATA_BLOCK "
+#define CHIPSET_855 0x35808086
 
 #ifndef VBIOS_FILE
-#define VBIOS_FILE    "/dev/mem"
+#define VBIOS_FILE "/dev/mem"
 #define VBIOS_OFFSET_IN_FILE VBIOS_START
 #else
 #define VBIOS_OFFSET_IN_FILE 0
@@ -40,6 +37,7 @@
 unsigned char *bios = 0;
 
 static int biosfd = 0;
+static unsigned char b1, b2;
 
 static unsigned int get_chipset(void) {
     outl(0x80000000, 0xcf8);
@@ -66,12 +64,47 @@ void open_bios(void) {
 
 void close_bios(void) {
     if(bios == NULL) {
-        fprintf(stderr, "BIOS should be open already!\n");
+        fprintf(stderr, "BIOS not opened !\n");
         exit(2);
     }
 
     munmap(bios, VBIOS_SIZE);
     close(biosfd);
+}
+
+void unlock_bios(void) {
+    if(get_chipset() == CHIPSET_855)
+    {
+        outl(0x8000005a, 0xcf8);
+		b1 = inb(0xcfe);
+
+        outl(0x8000005a, 0xcf8);
+        outb(0x33, 0xcfe);
+    }
+    else
+    {
+        outl(0x80000090, 0xcf8);
+        b1 = inb(0xcfd);
+        b2 = inb(0xcfe);
+
+        outl(0x80000090, 0xcf8);
+        outb(0x33, 0xcfd);
+        outb(0x33, 0xcfe);
+    }
+}
+
+void relock_bios(void) {
+    if(get_chipset() == CHIPSET_855)
+    {
+        outl(0x8000005a, 0xcf8);
+        outb(b1, 0xcfe);
+    }
+    else
+    {
+        outl(0x80000090, 0xcf8);
+        outb(b1, 0xcfd);
+        outb(b2, 0xcfe);
+    }
 }
 
 void display_chipset(void) {
@@ -81,21 +114,26 @@ unsigned int chipset;
     printf("Chipset: ");
     switch (chipset) {
         case 0x25608086:
-            printf("845G\n");
+            printf("845G");
         break;
 
-        case 0x35808086:
-            printf("855GM\n");
+        case CHIPSET_855:
+            printf("855GM");
         break;
 
         case 0x25708086:
-            printf("865G\n");
+            printf("865G");
+        break;
+
+        case 0x25808086:
+            printf("915G");
         break;
 
         default:
-            printf("Unknown (0x%08x)\n", chipset);
+            printf("Unknown");
         break;
     }
+    printf(" (id=0x%08x)\n", chipset);
 }
 
 unsigned char *get_vbios_cfg(void) {
