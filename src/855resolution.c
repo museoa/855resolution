@@ -12,160 +12,73 @@
  *
  *   - 1280patch by Andrew Tipton (andrewtipton null li).
  *
- * This source code is in the public domain.
+ * This source code is into the public domain.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/io.h>
 #include <unistd.h>
-#define __USE_GNU
-#include <string.h>
-#include <sys/mman.h>
-#include <fcntl.h>
 
-#define CHIPSET_ID          0x35808086
-#define VBIOS               0xc0000
-#define VBIOS_SIZE          0x10000
-#define CFG_SIGNATURE 	    "BIOS_DATA_BLOCK "
-#define CFG_VERSION         29+2
+#include "vbios.h"
+#include "plugin.h"
 
-unsigned char *bios = 0;
-int biosfd = 0;
+extern struct plugin PLUGINS;
+static struct plugin *plugins[] = { REF_PLUGINS };
+#define nb_plugins (sizeof(plugins) / sizeof(struct plugin *))
 
-static unsigned int get_chipset(void) {
-    outl(0x80000000, 0xcf8);
-    return inl(0xcfc);
-}
-
-static int unlock_bios(void) {
-    outl(0x8000005a, 0xcf8);
-    outb(0x33, 0xcfe);
-
-    return 1;
-}
-
-static int relock_bios(void) {
-    outl(0x8000005a, 0xcf8);
-    outb(0x11, 0xcfe);
-
-    return 1;
-}
-
-static void open_bios(void) {
-    biosfd = open("/dev/mem", O_RDWR);
-    if(biosfd < 0) {
-        perror("Unable to open /dev/mem");
-        exit(2);
-    }
-
-    bios = mmap((void *)VBIOS, VBIOS_SIZE,
-        PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED,
-        biosfd, VBIOS);
-    if(bios == NULL) {
-        fprintf(stderr, "Cannot mmap() the video BIOS\n");
-        close(biosfd);
-        exit(2);
-    }
-}
-
-static void close_bios(void) {
-    if(bios == NULL) {
-        fprintf(stderr, "BIOS should be open already!\n");
-        exit(2);
-    }
-
-    munmap(bios, VBIOS_SIZE);
-    close(biosfd);
-}
-
-static void display_chipset(void) {
-unsigned int chipset;
-
-    chipset = get_chipset();
-    printf("Chipset: ");
-    switch (chipset) {
-        case 0x35808086:
-            printf("855GM\n");
-            break;
-        default:
-            printf("Unknown (0x%08x)\n", chipset);
-            break;
-    }
-}
-
-static int check_bios(void) {
-unsigned char *bioscfg;
-
-    /* Find the configuration area of the BIOS */
-    bioscfg = memmem(bios, VBIOS_SIZE, CFG_SIGNATURE, strlen(CFG_SIGNATURE));
-    if(bioscfg == NULL) {
-        fprintf(stderr, "Couldn't find the configuration area in the VBIOS!\n");
-        close_bios();
-        return 0;
-    }
-
-    printf("BIOS Configuration area offset: 0x%04x bytes\n", bioscfg - bios);
-    printf("BIOS Version: %.4s\n\n", bioscfg + CFG_VERSION);
-
-    return 1;
-}
-
-/* Finds the EMode table in the BIOS */
-unsigned char *find_emode_table() {
+static struct vbios_mode *find_modes(int *bios_type) {
 int i;
+struct vbios_mode *modes;
 unsigned char *p = bios;
 
-    for(i=0; i<(VBIOS_SIZE-10); i++) { 
-        if((p[i] == 0x30) && (p[i+5] == 0x32) && (p[i+10] == 0x34)) return &p[i];
+    *bios_type = -1;
+    
+    while(p < (bios+VBIOS_SIZE-3*sizeof(struct vbios_mode))) {
+        modes = (struct vbios_mode *) p;
+ 
+        if((modes[0].mode == 0x30) && (modes[1].mode == 0x32) && (modes[2].mode == 0x34)) {
+            for(i=0; i<nb_plugins; i++) {
+                if(plugins[i]->detect_vbios_type(modes)) {
+                    *bios_type = i;
+                }
+            }
+            
+            return modes;
+        }
+
+        p++;
     }
 
     return NULL;
 }
 
-/* Lists the available modes */
-void list_modes(unsigned char *table) {
-unsigned int x, y;
-unsigned char *p;
-
-    while(*table != 0xff) {
-	p = bios + * (short *) (table+2);
-
-	x = ((((unsigned int) p[4]) & 0xf0) << 4) | p[2];
-	y = ((((unsigned int) p[7]) & 0xf0) << 4) | p[5];
-
-	if((x != 0) && (y != 0)) {
-            printf("Mode %02x : %dx%d, %d bits/pixel\n", table[0], x, y, table[1]);
-	}
-
-        table += 5;
-    }
-}
-
-/* Returns a pointer to the parameter block for a mode */
-unsigned char *get_emode_params(unsigned char *table, int mode) {
-    unsigned short offset;
-
-    while (*table != 0xff) {
-        if (*table == mode) {
-            offset = *(unsigned short *)(table+2);
-            return bios + offset;
+static struct vbios_resolution *find_resolution(struct vbios_mode *modes, int mode) {
+    while(modes->mode != 0xff) {
+        if(modes->mode == mode) {
+            return VBIOS_POINTER(modes->resolution);
         }
-        table += 5;         /* next record */
+
+        modes++;
     }
 
-    return 0;
+    return NULL;
 }
 
-void set_resolution(unsigned char *p, int x, int y) {
-    p[4] = (p[4] & 0x0f) | ((x >> 4) & 0xf0);
-    p[2] = (x & 0xff);
+static void list_modes(int vbios_type, struct vbios_mode *modes) {
+unsigned int x, y;
 
-    p[7] = (p[7] & 0x0f) | ((y >> 4) & 0xf0);
-    p[5] = (y & 0xff);
+    while(modes->mode != 0xff) {
+        plugins[vbios_type]->get_resolution(VBIOS_POINTER(modes->resolution), &x, &y);
+
+        if((x != 0) && (y != 0)) {
+            printf("Mode %02x : %dx%d, %d bits/pixel\n", modes->mode, x, y, modes->bits_per_pixel);
+        }
+
+        modes++;
+    }
 }
 
-int parse_args(int argc, char *argv[], int *list, int *mode, int *x, int *y) {
+static int parse_args(int argc, char *argv[], int *list, int *mode, int *x, int *y) {
 int index = 1;
 
     *list = *mode = *x = *y = 0;
@@ -176,11 +89,11 @@ int index = 1;
 
     if(!strcmp(argv[index], "-l")) {
         *list = 1;
-	index++;
+        index++;
 
-	if(argc<=index) {
-	    return 0;
-	}
+        if(argc<=index) {
+            return 0;
+        }
     }
 
     if(argc-index != 3) {
@@ -194,21 +107,23 @@ int index = 1;
     return 0;
 }
 
-void usage(char *name) {
+static void usage(char *name) {
     printf("Usage: %s [-l] [mode X Y]\n", name);
     printf("  Set the resolution to XxY for mode\n");
     printf("  Option -l displays the modes found into the vbios\n");
 }
 
 int main (int argc, char *argv[]) {
-unsigned char *emode_table;
-unsigned char *mode_params;
+unsigned char *vbios_cfg;
+int vbios_type;
+struct vbios_mode *modes;
+void *resolution;
 int list, mode, x, y;
 
     if(parse_args(argc, argv, &list, &mode, &x, &y) == -1)
     {
         usage(argv[0]);
-	return 2;
+        return 2;
     }
 
     if(iopl(3) < 0) {
@@ -219,46 +134,61 @@ int list, mode, x, y;
     display_chipset();
 
     open_bios();
-    if(!check_bios()) {
+    
+    modes = find_modes(&vbios_type);
+    if(vbios_type == -1)
+    {
+        fprintf(stderr, "Unknow VBIOS structure\n");
+        close_bios();
+        return 2;
+    }
+    
+    printf("VBIOS type: %d\n", vbios_type+1);
+    
+    vbios_cfg = get_vbios_cfg();
+    if(vbios_cfg == NULL) {
+        fprintf(stderr, "Couldn't find the configuration area in the VBIOS!\n");
         close_bios();
         return 2;
     }
 
-    emode_table = find_emode_table();
-    if(emode_table == NULL)
+    printf("VBIOS Version: %.4s\n", plugins[vbios_type]->get_vbios_version(vbios_cfg));
+
+    if(modes == NULL)
     {
-        fprintf(stderr, "Couldn't find the modes table in the VBIOS!\n");
-	close_bios();
-	return 2;
+        fprintf(stderr, "Couldn't find the modes table in the VBIOS\n");
+        close_bios();
+        return 2;
     }
 
+    putchar('\n');
+    
     if(list) {
-        list_modes(emode_table);
+        list_modes(vbios_type, modes);
     }
 
     if(mode!=0 && x!=0 && y!=0)
     {
-        mode_params = get_emode_params(emode_table, mode);
-	if(mode_params == NULL)
-	{
-	   fprintf(stderr, "Couldn't find the mode %02x into the modes table\n", mode);
-	   close_bios();
-	   return 2;
-	}
+        resolution = find_resolution(modes, mode);
+        if(resolution == NULL)
+        {
+            fprintf(stderr, "Couldn't find the mode %02x into the modes table\n", mode);
+            close_bios();
+            return 2;
+        }
 
         unlock_bios();
-        set_resolution(mode_params, x, y);
+        plugins[vbios_type]->set_resolution(resolution, x, y);
         relock_bios();
 
         printf("** Patch mode %02x to resolution %dx%d complete\n", mode, x, y);
 
-	if(list) {
-	    list_modes(emode_table);
-	}
+        if(list) {
+            list_modes(vbios_type, modes);
+        }
     }
 
     close_bios();
 
     return 0;
 }
-

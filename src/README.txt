@@ -25,7 +25,9 @@ You must be root to launch it.
 Installing
 ----------
 
-$ gcc -o 855resolution 855resolution.c
+$ make
+$ su
+# make install
 
 
 Setting
@@ -33,9 +35,9 @@ Setting
 
     1. Display the available resolutions :
 
-        # ./855resolution -l
+        # 855resolution -l
         Chipset: 855GM
-        BIOS Configuration area offset: 0x0b50 bytes
+	VBIOS type: 1
         BIOS Version: 3240
 
         Mode 30 : 640x480, 8 bits/pixel
@@ -60,13 +62,13 @@ Setting
     2. I personnaly decided to overwrite the 1920x1440 resolution
        because I don't use it :
 
-       # ./855resolution 3c 1400 1050
+       # 855resolution 3c 1400 1050
 
     3. Now the bios reports a 1400x1050 resolution :
 
-        # ./855resolution -l
+        # 855resolution -l
         Chipset: 855GM
-        BIOS Configuration area offset: 0x0b50 bytes
+	VBIOS type: 1
         BIOS Version: 3240
 
         Mode 30 : 640x480, 8 bits/pixel

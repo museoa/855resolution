@@ -1,0 +1,12 @@
+Version 0.2
+
+  - Prelimary support of the VBIOS "type 1"
+  - Code cleanup
+  - Modulary added, based on one plugin of each VBIOS
+    structure
+
+Version 0.1
+
+  - Initial release
+  - Only support of the VBIOS "type 2" as found
+    on Dell 510m
