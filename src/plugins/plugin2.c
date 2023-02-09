@@ -17,6 +17,9 @@
 
  /* VBIOS as found on the Dell 510m */
 
+#include <stdio.h>
+#include <sys/io.h>
+
 #include "../plugin.h"
 
 struct vbios_resolution {
@@ -28,10 +31,39 @@ struct vbios_resolution {
     unsigned char unknow3;
     unsigned char y2;
 } __attribute__((packed));
-            
-static int detect_vbios_type(struct vbios_mode *modes) {
-    return (modes[1].resolution - modes[0].resolution) == 54;
+
+static void unlock_bios(void) {
+    outl(0x8000005a, 0xcf8);
+    outb(0x33, 0xcfe);
 }
+
+static void relock_bios(void) {
+    outl(0x8000005a, 0xcf8);
+    outb(0x11, 0xcfe);
+}
+
+static int detect_vbios_type(struct vbios_mode *modes) {
+short int r1, r2;
+float f;
+
+    r1 = r2 = 32000;
+    while(modes->mode != 0xff) {
+        if(modes->resolution <= r1) {
+            r1 = modes->resolution;
+        } else {
+            if(modes->resolution <= r2) {
+                r2 = modes->resolution;
+            }
+        }
+
+        modes++;
+    }
+
+    f = ((float) (r2-r1-6)) / sizeof(struct vbios_resolution);
+
+    return f == (int) f;
+}
+
 
 static unsigned char *get_vbios_version(unsigned char *vbios_cfg) {
     return vbios_cfg+31;
@@ -43,11 +75,15 @@ static void get_resolution(struct vbios_resolution *resolution, unsigned int *x,
 }
 
 static void set_resolution(struct vbios_resolution *resolution, unsigned int x, unsigned int y) {
+    unlock_bios();
+
     resolution->x2 = (resolution->x2 & 0x0f) | ((x >> 4) & 0xf0);
     resolution->x1 = (x & 0xff);
 
     resolution->y2 = (resolution->y2 & 0x0f) | ((y >> 4) & 0xf0);
     resolution->y1 = (y & 0xff);
+
+    relock_bios();
 }
 
 struct plugin plugin2 = {

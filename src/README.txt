@@ -17,9 +17,10 @@ Usage
 
 You must be root to launch it.
 
-855resolution [-l] [mode X Y]
-  Set the resolution to XxY for the mode
-  Option -l displays the modes found into the vbios
+  Usage: 855resolution [-l] [-f bios_type] [mode X Y]
+  Options:
+      -l display the modes found into the vbios
+      -f skip the automatic VBIOS detection by forcing a VBIOS type
 
 
 Installing
@@ -116,5 +117,5 @@ I tried to make the programs as safe as possible but obviously I can't
 guarantee that they'll work for you. So don't blame me if something bad
 happens.
 
-                                                      Alain Poirier
-
+                                          Alain Poirier
+                                          alain.poirier1 at wanadoo.fr

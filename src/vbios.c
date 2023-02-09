@@ -16,6 +16,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #define __USE_GNU
 #include <string.h>
 #include <sys/mman.h>
@@ -39,24 +40,10 @@
 unsigned char *bios = 0;
 
 static int biosfd = 0;
- 
+
 static unsigned int get_chipset(void) {
     outl(0x80000000, 0xcf8);
     return inl(0xcfc);
-}
-
-int unlock_bios(void) {
-    outl(0x8000005a, 0xcf8);
-    outb(0x33, 0xcfe);
-
-    return 1;
-}
-
-int relock_bios(void) {
-    outl(0x8000005a, 0xcf8);
-    outb(0x11, 0xcfe);
-
-    return 1;
 }
 
 void open_bios(void) {
@@ -69,7 +56,7 @@ void open_bios(void) {
     bios = mmap((void *)VBIOS_START, VBIOS_SIZE,
         PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED,
         biosfd, VBIOS_OFFSET_IN_FILE);
-    
+
     if(bios == NULL) {
         fprintf(stderr, "Cannot mmap() the video BIOS\n");
         close(biosfd);
@@ -93,12 +80,21 @@ unsigned int chipset;
     chipset = get_chipset();
     printf("Chipset: ");
     switch (chipset) {
+        case 0x25608086:
+            printf("845G\n");
+        break;
+
         case 0x35808086:
             printf("855GM\n");
-            break;
+        break;
+
+        case 0x25708086:
+            printf("865G\n");
+        break;
+
         default:
             printf("Unknown (0x%08x)\n", chipset);
-            break;
+        break;
     }
 }
 

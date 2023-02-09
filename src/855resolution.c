@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "vbios.h"
@@ -24,25 +25,26 @@
 
 extern struct plugin PLUGINS;
 static struct plugin *plugins[] = { REF_PLUGINS };
-#define nb_plugins (sizeof(plugins) / sizeof(struct plugin *))
+#define nb_plugins ((int) (sizeof(plugins) / sizeof(struct plugin *)))
 
 static struct vbios_mode *find_modes(int *bios_type) {
 int i;
 struct vbios_mode *modes;
 unsigned char *p = bios;
 
-    *bios_type = -1;
-    
     while(p < (bios+VBIOS_SIZE-3*sizeof(struct vbios_mode))) {
         modes = (struct vbios_mode *) p;
- 
-        if((modes[0].mode == 0x30) && (modes[1].mode == 0x32) && (modes[2].mode == 0x34)) {
-            for(i=0; i<nb_plugins; i++) {
-                if(plugins[i]->detect_vbios_type(modes)) {
-                    *bios_type = i;
+
+        if(((modes[0].mode & 0xf0) == 0x30) && ((modes[1].mode & 0xf0) == 0x30) && ((modes[2].mode & 0xf0) == 0x30) && ((modes[3].mode & 0xf0) == 0x30)) {
+            if(*bios_type == -1) {
+                for(i=0; i<nb_plugins; i++) {
+                    if(plugins[i]->detect_vbios_type(modes)) {
+                        *bios_type = i;
+                        break;
+                    }
                 }
             }
-            
+
             return modes;
         }
 
@@ -78,22 +80,33 @@ unsigned int x, y;
     }
 }
 
-static int parse_args(int argc, char *argv[], int *list, int *mode, int *x, int *y) {
+static int parse_args(int argc, char *argv[], int *list, int *bios_type, int *mode, int *x, int *y) {
 int index = 1;
 
     *list = *mode = *x = *y = 0;
+    *bios_type = -1;
 
-    if(argc!=2 && argc!=4 && argc!=5) {
-        return -1;
-    }
-
-    if(!strcmp(argv[index], "-l")) {
+    if((argc > index) && !strcmp(argv[index], "-l")) {
         *list = 1;
         index++;
 
         if(argc<=index) {
             return 0;
         }
+    }
+
+    if((argc > index) && !strcmp(argv[index], "-f")) {
+        index++;
+    *bios_type = atoi(argv[index])-1;
+    index++;
+        if((*bios_type)<0 || (*bios_type >= nb_plugins)) {
+            fprintf(stderr, "Unknown forced VBIOS type (must be <= %d)\n", nb_plugins);
+        return -1;
+    }
+
+    if(argc<=index) {
+        return 0;
+    }
     }
 
     if(argc-index != 3) {
@@ -108,9 +121,11 @@ int index = 1;
 }
 
 static void usage(char *name) {
-    printf("Usage: %s [-l] [mode X Y]\n", name);
+    printf("Usage: %s [-l] [-f bios_type] [mode X Y]\n", name);
     printf("  Set the resolution to XxY for mode\n");
-    printf("  Option -l displays the modes found into the vbios\n");
+    printf("  Options:\n");
+    printf("    -l display the modes found into the vbios\n");
+    printf("    -f skip the VBIOS detection by forcing a VBIOS type\n");
 }
 
 int main (int argc, char *argv[]) {
@@ -120,7 +135,9 @@ struct vbios_mode *modes;
 void *resolution;
 int list, mode, x, y;
 
-    if(parse_args(argc, argv, &list, &mode, &x, &y) == -1)
+    printf("855resolution version %s, by Alain Poirier\n\n", VERSION);
+
+    if(parse_args(argc, argv, &list, &vbios_type, &mode, &x, &y) == -1)
     {
         usage(argv[0]);
         return 2;
@@ -134,7 +151,7 @@ int list, mode, x, y;
     display_chipset();
 
     open_bios();
-    
+
     modes = find_modes(&vbios_type);
     if(vbios_type == -1)
     {
@@ -142,9 +159,9 @@ int list, mode, x, y;
         close_bios();
         return 2;
     }
-    
+
     printf("VBIOS type: %d\n", vbios_type+1);
-    
+
     vbios_cfg = get_vbios_cfg();
     if(vbios_cfg == NULL) {
         fprintf(stderr, "Couldn't find the configuration area in the VBIOS!\n");
@@ -162,7 +179,7 @@ int list, mode, x, y;
     }
 
     putchar('\n');
-    
+
     if(list) {
         list_modes(vbios_type, modes);
     }
@@ -177,9 +194,7 @@ int list, mode, x, y;
             return 2;
         }
 
-        unlock_bios();
         plugins[vbios_type]->set_resolution(resolution, x, y);
-        relock_bios();
 
         printf("** Patch mode %02x to resolution %dx%d complete\n", mode, x, y);
 

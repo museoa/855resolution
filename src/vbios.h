@@ -33,8 +33,6 @@ extern unsigned char *bios;
 extern void display_chipset(void);
 extern void open_bios(void);
 extern void close_bios(void);
-extern int unlock_bios(void);
-extern int relock_bios(void);
 extern unsigned char *get_vbios_cfg(void);
 
 #endif
